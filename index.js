@@ -1,12 +1,16 @@
 const express = require('express');
+const bodyParser = require('body-parser');
 const JsonDB = require('node-json-db').JsonDB;
 const Config = require('node-json-db/dist/lib/JsonDBConfig').Config;
-const speakeasy = require('speakeasy')
-const uuid = require('uuid')
+const uuid = require('uuid');
+const speakeasy = require('speakeasy');
 
-const app = express()
+const app = express();
 
 const db = new JsonDB(new Config("myDataBase", true, false, '/'));
+
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
 app.get('/api', (req, res) => {
   res.json({ message: 'Welcome to the two-factor-authentication example using speakeasy.'})
@@ -27,6 +31,32 @@ app.post('/api/register', (req, res) => {
     console.log(error);
     res.status(500).json({ message: 'Error generating secret key'})
   }
+})
+
+//verify token and set tmp secret permanent
+app.post('/api/verify', (req, res) => {
+  const { userId, token } = req.body;
+  try {
+    // retrieve data from myDataBase
+    const path =  `/user/${userId}`;
+    const user = db.getData(path);
+    const { base32: secret } = user.temp_secret;
+    const verified = speakeasy.totp.verify({
+      secret,
+      encoding: 'base32',
+      token
+    });
+    if (verified) {
+      //update user data
+      db.push(path, { id: userId, secret: user.temp_secret});
+      res.json({ verified: true })
+    } else {
+      res.json({ verified: false })
+    }
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: 'Error retrieving user' })
+  };
 })
 
 const PORT = process.env.PORT || 5000;
